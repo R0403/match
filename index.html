@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>キャンディ風パズル強化版</title>
+<title>キャンディ風パズル（コンボ付き）</title>
 <style>
 body {
     font-family: sans-serif;
@@ -14,7 +14,7 @@ body {
 #game {
     display: grid;
     grid-template-columns: repeat(8, 50px);
-    grid-gap: 5px;
+    gap: 5px;
     justify-content: center;
     margin: 20px auto;
 }
@@ -22,7 +22,12 @@ body {
 .cell {
     width: 50px;
     height: 50px;
+    font-size: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 10px;
+    background: #333;
     cursor: pointer;
     transition: transform 0.2s, opacity 0.3s;
 }
@@ -37,6 +42,18 @@ body {
     100% { transform: scale(0); opacity: 0; }
 }
 
+#combo {
+    position: fixed;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 40px;
+    color: gold;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
 button {
     padding: 10px 20px;
     margin-top: 10px;
@@ -46,34 +63,37 @@ button {
 </head>
 <body>
 
-<h1>🍬 キャンディ風パズル（強化版）</h1>
+<h1>🍬 お菓子パズル</h1>
 <div>スコア: <span id="score">0</span></div>
 <div>残り手数: <span id="moves">20</span></div>
 
 <div id="game"></div>
+<div id="combo"></div>
 
 <button onclick="restartGame()">リスタート</button>
 
 <script>
 const width = 8;
-const colors = ["red","yellow","green","blue","purple"];
+const candies = ["🍬","🍩","🍪","🍫","🍭"];
 let board = [];
 let score = 0;
 let moves = 20;
 let selected = null;
+let combo = 0;
 
 const game = document.getElementById("game");
+const comboText = document.getElementById("combo");
 
 function createBoard() {
     board = [];
     game.innerHTML = "";
     for (let i = 0; i < width * width; i++) {
-        const color = randomColor();
-        board.push(color);
+        const candy = randomCandy();
+        board.push(candy);
 
         const div = document.createElement("div");
         div.className = "cell";
-        div.style.background = color;
+        div.innerText = candy;
         div.dataset.index = i;
 
         div.addEventListener("click", handleClick);
@@ -81,8 +101,16 @@ function createBoard() {
     }
 }
 
-function randomColor() {
-    return colors[Math.floor(Math.random() * colors.length)];
+function randomCandy() {
+    return candies[Math.floor(Math.random() * candies.length)];
+}
+
+function isAdjacent(i, j) {
+    const x1 = i % width;
+    const y1 = Math.floor(i / width);
+    const x2 = j % width;
+    const y2 = Math.floor(j / width);
+    return (Math.abs(x1 - x2) + Math.abs(y1 - y2)) === 1;
 }
 
 function handleClick(e) {
@@ -94,87 +122,102 @@ function handleClick(e) {
         selected = index;
         e.target.style.outline = "3px solid white";
     } else {
+        if (!isAdjacent(selected, index)) {
+            selected = null;
+            redraw();
+            return;
+        }
+
         swap(selected, index);
-        selected = null;
-        moves--;
-        updateInfo();
-        updateBoard();
+        let matches = findMatches();
+
+        if (matches.length > 0) {
+            moves--;
+            combo = 0; // 最初の1手はコンボリセット
+            updateBoard();
+        } else {
+            swap(selected, index);
+            selected = null;
+            redraw();
+        }
     }
 }
 
 function swap(i, j) {
-    const temp = board[i];
-    board[i] = board[j];
-    board[j] = temp;
+    [board[i], board[j]] = [board[j], board[i]];
+}
+
+function findMatches() {
+    let set = new Set();
+
+    // 横
+    for (let i = 0; i < width * width; i++) {
+        if (i % width > width - 3) continue;
+        let base = board[i];
+        let temp = [i];
+
+        for (let j = 1; j < width; j++) {
+            if (board[i + j] === base) temp.push(i + j);
+            else break;
+        }
+
+        if (temp.length >= 3) temp.forEach(x => set.add(x));
+    }
+
+    // 縦
+    for (let i = 0; i < width * (width - 2); i++) {
+        let base = board[i];
+        let temp = [i];
+
+        for (let j = 1; j < width; j++) {
+            if (board[i + j * width] === base) temp.push(i + j * width);
+            else break;
+        }
+
+        if (temp.length >= 3) temp.forEach(x => set.add(x));
+    }
+
+    return Array.from(set);
 }
 
 function updateBoard() {
     const cells = document.querySelectorAll(".cell");
-
     let matches = findMatches();
 
     if (matches.length > 0) {
-        matches.forEach(i => {
-            cells[i].classList.add("match");
-        });
+        combo++;
+
+        if (combo >= 2) showCombo(combo);
+
+        matches.forEach(i => cells[i].classList.add("match"));
 
         setTimeout(() => {
             matches.forEach(i => board[i] = null);
 
-            // ボーナス処理
-            if (matches.length >= 4) {
-                score += matches.length * 20; // ボーナス
-            } else {
-                score += matches.length * 10;
-            }
+            // スコア（コンボ倍率）
+            score += matches.length * 10 * combo;
 
             drop();
             refill();
             redraw();
             updateInfo();
 
-            // 連鎖
             setTimeout(updateBoard, 200);
         }, 300);
 
     } else {
+        selected = null;
         redraw();
     }
 }
 
-function findMatches() {
-    let matchSet = new Set();
+function showCombo(c) {
+    comboText.innerText = c + " COMBO!";
+    comboText.style.opacity = 1;
 
-    // 横
-    for (let i = 0; i < width * width; i++) {
-        if (i % width > width - 3) continue;
-        let color = board[i];
-        if (!color) continue;
-
-        let temp = [i];
-        for (let j = 1; j < width; j++) {
-            if (board[i + j] === color) {
-                temp.push(i + j);
-            } else break;
-        }
-        if (temp.length >= 3) temp.forEach(x => matchSet.add(x));
-    }
-
-    // 縦
-    for (let i = 0; i < width * (width - 2); i++) {
-        let color = board[i];
-        if (!color) continue;
-
-        let temp = [i];
-        for (let j = 1; j < width; j++) {
-            if (board[i + j * width] === color) {
-                temp.push(i + j * width);
-            } else break;
-        }
-        if (temp.length >= 3) temp.forEach(x => matchSet.add(x));
-    }
-
-    return Array.from(matchSet);
+    setTimeout(() => {
+        comboText.style.opacity = 0;
+    }, 800);
 }
 
 function drop() {
@@ -196,7 +239,7 @@ function drop() {
 function refill() {
     for (let i = 0; i < board.length; i++) {
         if (board[i] === null) {
-            board[i] = randomColor();
+            board[i] = randomCandy();
         }
     }
 }
@@ -204,7 +247,7 @@ function refill() {
 function redraw() {
     const cells = document.querySelectorAll(".cell");
     cells.forEach((cell, i) => {
-        cell.style.background = board[i];
+        cell.innerText = board[i];
         cell.classList.remove("match");
         cell.style.outline = "none";
     });
@@ -224,6 +267,7 @@ function updateInfo() {
 function restartGame() {
     score = 0;
     moves = 20;
+    combo = 0;
     selected = null;
     updateInfo();
     createBoard();
